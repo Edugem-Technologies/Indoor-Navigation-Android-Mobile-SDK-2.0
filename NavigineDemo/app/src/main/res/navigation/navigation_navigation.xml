@@ -7,7 +7,7 @@
 
     <fragment
         android:id="@+id/fr_navigation"
-        android:name="com.navigine.navigine.demo.ui.fragments.NavigationFragment"
+        android:name="com.navigine.navigine.demo.ui.fragments.NavigationFragment2"
         android:label="b"
         tools:layout="@layout/fragment_navigation">
 
