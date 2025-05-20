@@ -2,11 +2,13 @@ package com.navigine.navigine.demo.ui.fragments;
 
 import static android.view.View.GONE;
 
+import android.content.Intent;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
+import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 
@@ -23,6 +25,7 @@ import com.navigine.idl.java.LocationInfo;
 import com.navigine.idl.java.LocationListListener;
 import com.navigine.navigine.demo.R;
 import com.navigine.navigine.demo.adapters.locations.LocationListAdapter;
+import com.navigine.navigine.demo.helloar.HelloArActivity;
 import com.navigine.navigine.demo.utils.Constants;
 import com.navigine.navigine.demo.utils.NavigineSdkManager;
 import com.navigine.navigine.demo.utils.NetworkUtils;
@@ -44,6 +47,7 @@ public class LocationsFragment extends Fragment implements SwipeRefreshLayout.On
     private FrameLayout               mCircularProgress          = null;
     private CircularProgressIndicator mCircularProgressIndicator = null;
     private TextView                  mWarningTv                 = null;
+    private Button                    mStartArBtn                 = null;
     private DividerItemDecoration     mDivider                   = null;
 
     private SortedSet<LocationInfo> mInfoList = new TreeSet<>(new InfoComparator());
@@ -110,6 +114,7 @@ public class LocationsFragment extends Fragment implements SwipeRefreshLayout.On
         mCircularProgress          = view.findViewById(R.id.locations_fragment__progress_circular);
         mCircularProgressIndicator = view.findViewById(R.id.locations_fragment__progress_circular_indicator);
         mWarningTv                 = view.findViewById(R.id.locations_fragment__warning);
+        mStartArBtn                = view.findViewById(R.id.start_ar_button);
         mDivider                   = new DividerItemDecoration(requireActivity(), DividerItemDecoration.VERTICAL);
     }
 
@@ -136,6 +141,9 @@ public class LocationsFragment extends Fragment implements SwipeRefreshLayout.On
                 hideRefreshView();
                 hideWarningMessage();
             }
+        });
+        mStartArBtn.setOnClickListener(view -> {
+            startActivity(new Intent(requireContext(), HelloArActivity.class));
         });
     }
 
