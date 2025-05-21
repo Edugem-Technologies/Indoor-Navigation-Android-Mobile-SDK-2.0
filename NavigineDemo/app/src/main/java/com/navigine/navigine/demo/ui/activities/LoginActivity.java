@@ -82,6 +82,8 @@ public class LoginActivity extends AppCompatActivity {
         setViewsParams();
         setViewsListeners();
         permissionsRequest();
+
+        onHandleLoginAction();
     }
 
     @Override
