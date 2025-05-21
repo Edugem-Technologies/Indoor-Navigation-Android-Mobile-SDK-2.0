@@ -564,6 +564,21 @@ public class NavigationFragment2 extends BaseFragment {
         mZoomOutLayout.setOnClickListener(v -> onZoomOut());
         mAdjustModeButton.setOnClickListener(v -> toggleAdjustMode());
 
+        // Make the "From" text clickable to revert to current location if a manual start point is set
+        mFromCurrentText.setOnClickListener(v -> {
+            if (mFromPoint != null) { // Only act if a manual start point is active
+                Log.d(TAG, "Reverting from manual start point to current location.");
+                mFromPoint = null;
+                mFromVenue = null; 
+                if (mPinIconFrom != null) {
+                    mPinIconFrom.setVisible(false);
+                }
+                // mSelectMapPoint should be false as we are reverting from a selected point, not initiating a new selection.
+                // However, setActiveMakeRouteButton will handle the mSelectMapPoint logic based on its parameters.
+                setActiveMakeRouteButton(false, false); // Update UI to current location or select prompt
+            }
+        });
+
 
         mLocationView.getLocationWindow().addPickListener(new PickListener() {
             @Override
@@ -598,13 +613,55 @@ public class NavigationFragment2 extends BaseFragment {
 
             @Override
             public void onViewLongTap(PointF pointF) {
-                if (hasTarget() || mPositionLocationPoint == null) return;
                 Point p = mLocationView.getLocationWindow().screenPositionToMeters(pointF);
-                NavigineSdkManager.RouteManager.clearTargets();
-                setRoutePin(p);
-                resetPinVenue();
-                updateDestinationText("To:       Point (" + String.format("%.1f", mPinPoint.getPoint().getX()) + ", " + String.format("%.1f", mPinPoint.getPoint().getY()) + ")");
-                updateRouteSheetInfo();
+
+                // Condition to select a START point
+                if (mFromPoint == null &&
+                    (mMakeRouteBehavior.getState() == BottomSheetBehavior.STATE_HIDDEN || mMakeRouteBehavior.getState() == BottomSheetBehavior.STATE_COLLAPSED) &&
+                    mLocation != null && mSublocation != null) { // Ensure location and sublocation are available
+
+                    mFromPoint = new LocationPoint(p, mLocation.getId(), mSublocation.getId());
+                    mFromVenue = null;
+
+                    // Initialize mPinIconFrom if it's null
+                    if (mPinIconFrom == null) {
+                        mPinIconFrom = mLocationView.getLocationWindow().addIconMapObject();
+                    }
+                    setupPinIcon(mPinIconFrom, R.drawable.ic_from_point_png, mFromPoint);
+                    setActiveMakeRouteButton(true, false); // true for mSelectMapPoint, false to not clear mFromPoint we just set
+
+                    // Update UI text specifically for custom start point
+                    mFromCurrentText.setText("From: Point (" + String.format(Locale.ENGLISH, "%.1f", p.getX()) + ", " + String.format(Locale.ENGLISH, "%.1f", p.getY()) + ")");
+                    mFromCurrentText.setTextColor(getResources().getColor(R.color.colorPrimary)); // Or a specific color for selected point
+                    mFromImageView.setImageResource(R.drawable.ic_from_point);
+
+
+                    updatePinIconState(mPinIconTarget, false); // Hide destination pin if visible
+                    mPinPoint = null; // Clear any previous destination pin data
+                    mToVenue = null;  // Clear any previous destination venue data
+                    updateDestinationText("To: "); // Clear destination text or set to default
+
+                    updateRouteSheetInfo(); // Show or expand the make route sheet
+                }
+                // Condition to select a DESTINATION point
+                else {
+                    // If a route is already targeted, or if no start point is available (neither current location nor manual mFromPoint)
+                    if (hasTarget() || (mFromPoint == null && mPositionLocationPoint == null)) {
+                        return;
+                    }
+
+                    // If we are in this block, we are setting a DESTINATION.
+                    // Ensure mSelectMapPoint is false so setRoutePin uses mPinIconTarget.
+                    // This is crucial if a start point was previously selected via map tap,
+                    // which would have set mSelectMapPoint to true via setActiveMakeRouteButton.
+                    mSelectMapPoint = false;
+
+                    NavigineSdkManager.RouteManager.clearTargets(); // Clear previous routing attempts
+                    setRoutePin(p); // Sets mPinPoint and mPinIconTarget
+                    resetPinVenue(); // mPinVenue = null
+                    updateDestinationText("To:       Point (" + String.format(Locale.ENGLISH, "%.1f", mPinPoint.getPoint().getX()) + ", " + String.format(Locale.ENGLISH, "%.1f", mPinPoint.getPoint().getY()) + ")");
+                    updateRouteSheetInfo(); // Show or expand the make route sheet
+                }
             }
         });
 
@@ -907,34 +964,68 @@ public class NavigationFragment2 extends BaseFragment {
     }
 
     private void setActiveMakeRouteButton(boolean isSelectMapPoint, boolean isGiveChoose) {
-        mSelectMapPoint = isSelectMapPoint;
+        // If isGiveChoose is true, it means user wants to clear the current mFromPoint to select a new one.
         if (isGiveChoose) {
             mFromPoint = null;
             mFromVenue = null;
+            if (mPinIconFrom != null) mPinIconFrom.setVisible(false);
+            // isSelectMapPoint should be true in this case, as user wants to pick a new point.
+            // If it's not, it implies a reset to "Current Location" or "Select Point" if current is unavailable.
         }
-        if (mSelectMapPoint) {
-            mFromCurrentText.setText("From: Select Point on Map");
-            mFromCurrentText.setTextColor(getResources().getColor(R.color.colorError));
-            mFromImageView.setImageResource(R.drawable.ic_to_point);
-            updatePinIconState(mPinIconFrom, true);
-        } else {
-            mFromCurrentText.setText("From: Current Location");
-            mFromCurrentText.setTextColor(getResources().getColor(R.color.colorPrimary));
-            mFromImageView.setImageResource(R.drawable.ic_current_point);
-            updatePinIconState(mPinIconFrom, false);
-        }
+        
+        this.mSelectMapPoint = isSelectMapPoint; // Update mSelectMapPoint state
 
+        if (mFromPoint != null) {
+            // State A: Manual start point is active.
+            // Text is usually set by onViewLongTap: "From: Point (X.Y)"
+            // Ensure icon, color, and clickability are correct.
+            mFromImageView.setImageResource(R.drawable.ic_from_point);
+            mFromCurrentText.setTextColor(ContextCompat.getColor(requireContext(), R.color.colorPrimary));
+            updatePinIconState(mPinIconFrom, true); // Ensure start pin is visible
+            mFromCurrentText.setClickable(true);
+            mFromCurrentText.setCompoundDrawablesWithIntrinsicBounds(0, 0, R.drawable.ic_close_variant_2, 0); // Add a "clear" icon
+        } else {
+            // No manual mFromPoint. State B or C.
+            updatePinIconState(mPinIconFrom, false); // Hide start pin if any was visible
+            mFromCurrentText.setClickable(false); // Not clickable to revert if no manual point
+            mFromCurrentText.setCompoundDrawablesWithIntrinsicBounds(0, 0, 0, 0); // Remove "clear" icon
+
+            if (this.mSelectMapPoint) {
+                // User intends to select a point on map for start (or no location available and must select)
+                mFromCurrentText.setText(R.string.navigation_from_select_on_map); // "From: Select Point on Map"
+                mFromImageView.setImageResource(R.drawable.ic_from_point); // Or ic_to_point
+                mFromCurrentText.setTextColor(ContextCompat.getColor(requireContext(), R.color.colorError));
+            } else if (mPositionLocationPoint != null) {
+                // State B: Default to current location.
+                mFromCurrentText.setText(getString(R.string.navigation_from_current));
+                mFromImageView.setImageResource(R.drawable.ic_current_point);
+                mFromCurrentText.setTextColor(ContextCompat.getColor(requireContext(), R.color.colorPrimary));
+            } else {
+                // State C: No current location, no manual point, must select.
+                mFromCurrentText.setText(R.string.navigation_from_select_on_map); // "From: Select Point on Map"
+                mFromImageView.setImageResource(R.drawable.ic_from_point); // Or ic_to_point
+                mFromCurrentText.setTextColor(ContextCompat.getColor(requireContext(), R.color.colorError));
+            }
+        }
     }
 
     private void hideAndShowBottomSheets(@Nullable BottomSheetBehavior hideFirst, @Nullable BottomSheetBehavior show, int showState) {
         if (hideFirst != null) hideFirst.setState(BottomSheetBehavior.STATE_HIDDEN);
-        if (show != null) show.setState(showState);
+        
         if (show != null && show == mMakeRouteBehavior) {
-            setActiveMakeRouteButton(false, false);
+            // This is called when the sheet is about to be shown.
+            // Update the "From" UI based on the current state.
+            // If mFromPoint is null, it means we should either show "Current Location" or "Select Point on Map".
+            // If mFromPoint is set, its specific text "From: Point (X,Y)" was set by onViewLongTap,
+            // but we still call setActiveMakeRouteButton to ensure icon, color, and clickability are correct.
+            setActiveMakeRouteButton(mSelectMapPoint, false); // isGiveChoose is false, as we are just setting initial state
+
             if (mAdjustMode) {
                 toggleAdjustMode();
             }
         }
+        
+        if (show != null) show.setState(showState);
     }
 
     private void updateRouteSheetInfo() {
@@ -954,43 +1045,110 @@ public class NavigationFragment2 extends BaseFragment {
     }
 
     public void onMakeRoute() {
+        LocationPoint finalTargetLocationPoint = null;
 
-        if (mSelectMapPoint) {
-            mTargetPoint = mPinPoint;
-            mTargetVenue = mToVenue;
-            mPinPoint = null;
-            mPinVenue = null;
-            mToVenue = null;
+        if (mPinPoint != null) {
+            finalTargetLocationPoint = mPinPoint;
+            Log.d(TAG, "Target is mPinPoint: (" + mPinPoint.getPoint().getX() + ", " + mPinPoint.getPoint().getY() + ")");
+        } else if (mToVenue != null) {
+            if (mLocation != null && mSublocation != null) {
+                finalTargetLocationPoint = new LocationPoint(mToVenue.getPoint(), mLocation.getId(), mSublocation.getId());
+                Log.d(TAG, "Target is mToVenue: " + mToVenue.getName());
+            } else {
+                Toast.makeText(requireActivity(), "Location data unavailable for venue target.", Toast.LENGTH_SHORT).show();
+                return;
+            }
+        }
+
+        if (finalTargetLocationPoint == null) {
+            Toast.makeText(requireActivity(), R.string.navigation_destination_select, Toast.LENGTH_SHORT).show();
             return;
         }
 
-        if (mPinPoint != null) {
-            mTargetPoint = mPinPoint;
-            mTargetVenue = null;
-            mPinPoint = null;
-            mPinVenue = null;
-            mToVenue = null;
-
-            Log.d(TAG, "Set target point");
-
-            NavigineSdkManager.RouteManager.setTarget(mTargetPoint);
-
-        } else if (mToVenue != null) {
-            mTargetVenue = mToVenue;
-            mTargetPoint = null;
-            mPinVenue = null;
-            mToVenue = null;
-            mPinPoint = null;
-
-            Log.d(TAG, "Set venue target " + mTargetVenue.getId());
-
-            NavigineSdkManager.RouteManager.setTarget(new LocationPoint(mTargetVenue.getPoint(), mLocation.getId(), mSublocation.getId()));
-        }
+        // Ensure the route listener is active.
+        // This is beneficial if setTarget is called, or if handleDeviceUpdate itself relies on it
+        // for some extended interactions not covered by direct path processing.
         NavigineSdkManager.RouteManager.addRouteListener(mRouteListener);
-        if (mVenueBottomSheet.isAdded()) mVenueBottomSheet.dismiss();
+
+        if (mFromPoint != null) {
+            // Manual start point is set, use NavigineSdkManager.RouteManager.makeRoute()
+            Log.d(TAG, "Routing from manual mFromPoint: (" + mFromPoint.getPoint().getX() + ", " + mFromPoint.getPoint().getY() + ") to target: (" + finalTargetLocationPoint.getPoint().getX() + ", " + finalTargetLocationPoint.getPoint().getY() + ")");
+            RoutePath path = NavigineSdkManager.RouteManager.makeRoute(mFromPoint, finalTargetLocationPoint);
+            mRouting = true; // Set routing flag
+
+            if (path == null || path.getPoints() == null || path.getPoints().isEmpty()) {
+                Log.d(TAG, "makeRoute returned null or empty path.");
+                // Do not hide cancel sheet here, allow user to see current state and potentially cancel manually
+                // cancelRouteAndHideSheet(); 
+                showWarningTemp(getString(R.string.err_navigation_no_route), 3000);
+                mRouting = false; // Reset routing flag as no route was made
+                // mFromPoint is intentionally not cleared here, so user can try a different destination.
+                // Hide the make route sheet, but don't cancel the entire operation, pins should remain.
+                hideAndShowBottomSheets(null, mMakeRouteBehavior, BottomSheetBehavior.STATE_HIDDEN);
+                return;
+            }
+
+            mRoutePath = path;
+            mPoints.clear();
+
+            if (mSublocation != null) { // Ensure mSublocation is available
+                for (LocationPoint locationPoint : mRoutePath.getPoints()) {
+                    if (locationPoint.getSublocationId() == mSublocation.getId()) {
+                        mPoints.add(locationPoint.getPoint());
+                    }
+                }
+            }
+
+            if (!mPoints.isEmpty() && mLocation != null && mSublocation != null) {
+                LocationPolyline polyline = new LocationPolyline(new Polyline(mPoints), mLocation.getId(), mSublocation.getId());
+                mPolylineMapObject.setPolyLine(polyline);
+                mPolylineMapObject.setVisible(true);
+                Log.d(TAG, "Polyline set with " + mPoints.size() + " points.");
+            } else {
+                mPolylineMapObject.setVisible(false);
+                Log.d(TAG, "Polyline hidden, no points for current sublocation or mSublocation is null.");
+            }
+
+            handleDeviceUpdate(mRoutePath); // Update route instructions, etc.
+
+            if (mRoutePath.getLength() < ROUTE_FINISH_DISTANCE_NOTICE) {
+                showRouteFinishSheet();
+            }
+        } else {
+            // No manual start point (mFromPoint is null), use current location via NavigineSdkManager.RouteManager.setTarget()
+            Log.d(TAG, "Routing from current location to target: (" + finalTargetLocationPoint.getPoint().getX() + ", " + finalTargetLocationPoint.getPoint().getY() + ")");
+            
+            // Ensure target has valid Location ID if it's -1 (common for points made from raw coordinates)
+            if (finalTargetLocationPoint.getLocationId() == -1 && mLocation != null) {
+                 finalTargetLocationPoint = new LocationPoint(finalTargetLocationPoint.getPoint(), mLocation.getId(), finalTargetLocationPoint.getSublocationId());
+            }
+            NavigineSdkManager.RouteManager.setTarget(finalTargetLocationPoint);
+            setRoutingFlag(); // Sets mRouting = true
+        }
+
+        // Common cleanup actions after attempting to make a route
+        if (mVenueBottomSheet.isAdded()) {
+            mVenueBottomSheet.dismiss();
+        }
         hideAndShowBottomSheets(null, mMakeRouteBehavior, BottomSheetBehavior.STATE_HIDDEN);
 
-        setRoutingFlag();
+        // Clear all temporary selection states now that a route attempt has been made.
+        // If makeRoute failed and returned early, mFromPoint might still be set, allowing user to pick new target.
+        // Otherwise, mFromPoint is cleared as it has been "used".
+        mTargetPoint = null; 
+        mTargetVenue = null;
+
+        mPinPoint = null;
+        mPinVenue = null;
+        mToVenue = null;
+
+        // If routing was started (either via makeRoute success or setTarget), consume mFromPoint.
+        // If makeRoute failed and returned, mFromPoint is preserved.
+        if (mRouting) {
+            mFromPoint = null;
+            mFromVenue = null;
+        }
+        mSelectMapPoint = false; // Reset map selection mode in all cases
     }
 
     private void setRoutingFlag() {
