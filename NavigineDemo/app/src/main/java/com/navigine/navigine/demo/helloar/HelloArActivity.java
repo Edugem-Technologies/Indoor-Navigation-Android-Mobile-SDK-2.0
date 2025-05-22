@@ -47,11 +47,14 @@ import com.google.ar.core.Plane;
 import com.google.ar.core.Point;
 import com.google.ar.core.Point.OrientationMode;
 import com.google.ar.core.PointCloud;
+import com.google.ar.core.Pose;
 import com.google.ar.core.Session;
 import com.google.ar.core.Trackable;
 import com.google.ar.core.TrackingFailureReason;
 import com.google.ar.core.TrackingState;
+import com.navigine.idl.java.LocationPoint;
 import com.navigine.navigine.demo.R;
+import com.navigine.navigine.demo.application.NavigineApp;
 import com.navigine.navigine.demo.common.helpers.CameraPermissionHelper;
 import com.navigine.navigine.demo.common.helpers.DepthSettings;
 import com.navigine.navigine.demo.common.helpers.DisplayRotationHelper;
@@ -62,6 +65,7 @@ import com.navigine.navigine.demo.common.helpers.TapHelper;
 import com.navigine.navigine.demo.common.helpers.TrackingStateHelper;
 import com.navigine.navigine.demo.common.samplerender.Framebuffer;
 import com.navigine.navigine.demo.common.samplerender.GLError;
+import com.navigine.navigine.demo.common.samplerender.IndexBuffer;
 import com.navigine.navigine.demo.common.samplerender.Mesh;
 import com.navigine.navigine.demo.common.samplerender.SampleRender;
 import com.navigine.navigine.demo.common.samplerender.Shader;
@@ -80,6 +84,10 @@ import com.google.ar.core.exceptions.UnavailableUserDeclinedInstallationExceptio
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.FloatBuffer;
+import java.nio.IntBuffer;
+import java.nio.ShortBuffer;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -95,6 +103,10 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
 
   private static final String SEARCHING_PLANE_MESSAGE = "Searching for surfaces...";
   private static final String WAITING_FOR_TAP_MESSAGE = "Tap on a surface to place an object.";
+
+  private static final float PATH_HEIGHT = -1f; // Height of the path above ground
+  private static final float[] PATH_COLOR = {1.0f, 0.0f, 0.0f, 1.0f}; // Red color for path
+  private static final float COORDINATE_SCALE = 1.0f; // Scale factor to convert Navigine coordinates to AR world scale
 
   // See the definition of updateSphericalHarmonicsCoefficients for an explanation of these
   // constants.
@@ -160,6 +172,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
   private Shader virtualObjectShader;
   private Texture virtualObjectAlbedoTexture;
   private Texture virtualObjectAlbedoInstantPlacementTexture;
+  private Texture virtualObjectPbrTexture;
 
   private final List<WrappedAnchor> wrappedAnchors = new ArrayList<>();
 
@@ -420,7 +433,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
               "models/pawn_albedo_instant_placement.png",
               Texture.WrapMode.CLAMP_TO_EDGE,
               Texture.ColorFormat.SRGB);
-      Texture virtualObjectPbrTexture =
+      virtualObjectPbrTexture =
           Texture.createFromAsset(
               render,
               "models/pawn_roughness_metallic_ao.png",
@@ -619,6 +632,82 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
       }
 
       render.draw(virtualObjectMesh, virtualObjectShader, virtualSceneFramebuffer);
+    }
+
+    // Draw navigation path if available
+    if (NavigineApp.mRoutePath != null && camera.getTrackingState() == TrackingState.TRACKING) {
+      Log.d(TAG, "Starting to draw navigation path");
+      List<LocationPoint> pathPoints = NavigineApp.mRoutePath.getPoints();
+      if (pathPoints != null && !pathPoints.isEmpty()) {
+        Log.d(TAG, "Path points found: " + pathPoints.size());
+
+        // Get camera pose
+        Pose cameraPose = camera.getPose();
+        float[] cameraPosition = new float[3];
+        cameraPose.getTranslation(cameraPosition, 0);
+        Log.d(TAG, "Camera position: " + cameraPosition[0] + ", " + cameraPosition[1] + ", " + cameraPosition[2]);
+
+        // Get the starting point (first point in the path)
+        LocationPoint startPoint = pathPoints.get(0);
+        float startX = startPoint.getPoint().getX() * COORDINATE_SCALE;
+        float startZ = startPoint.getPoint().getY() * COORDINATE_SCALE;
+        Log.d(TAG, "Path start point: " + startX + ", " + startZ);
+
+        // Create new anchors for path points
+        for (int i = 0; i < pathPoints.size() - 1; i++) {
+          LocationPoint currentPoint = pathPoints.get(i);
+          LocationPoint nextPoint = pathPoints.get(i + 1);
+          Log.d(TAG, "Drawing path segment " + i + " from " + currentPoint.getPoint().getX() + "," + currentPoint.getPoint().getY() + 
+                " to " + nextPoint.getPoint().getX() + "," + nextPoint.getPoint().getY());
+
+          // Convert Navigine coordinates to AR world coordinates relative to start point
+          float[] position = new float[]{
+              -(currentPoint.getPoint().getX() * COORDINATE_SCALE) + startX,  // Invert X coordinate
+              PATH_HEIGHT, // Place path slightly above ground
+              (currentPoint.getPoint().getY() * COORDINATE_SCALE) - startZ
+          };
+
+          // Calculate direction to next point
+          float dx = -(nextPoint.getPoint().getX() - currentPoint.getPoint().getX()) * COORDINATE_SCALE;  // Invert X direction
+          float dz = (nextPoint.getPoint().getY() - currentPoint.getPoint().getY()) * COORDINATE_SCALE;
+          float length = (float) Math.sqrt(dx * dx + dz * dz);
+          Log.d(TAG, "Line length: " + length);
+
+          // Create rotation matrix to align line with direction
+          float[] rotationMatrix = new float[16];
+          Matrix.setIdentityM(rotationMatrix, 0);
+          float angle = (float) Math.atan2(dz, dx);
+          Matrix.rotateM(rotationMatrix, 0, (float) Math.toDegrees(angle), 0, 1, 0);
+
+          // Combine rotation and translation
+          float[] modelMatrix = new float[16];
+          Matrix.setIdentityM(modelMatrix, 0);
+          Matrix.translateM(modelMatrix, 0, position[0], position[1], position[2]);
+          Matrix.multiplyMM(modelMatrix, 0, modelMatrix, 0, rotationMatrix, 0);
+          Matrix.scaleM(modelMatrix, 0, 2.0f, 2.0f, 2.0f);
+
+          // Calculate view and projection matrices
+          Matrix.multiplyMM(modelViewMatrix, 0, viewMatrix, 0, modelMatrix, 0);
+          Matrix.multiplyMM(modelViewProjectionMatrix, 0, projectionMatrix, 0, modelViewMatrix, 0);
+
+          // Set shader uniforms
+          virtualObjectShader.setMat4("u_ModelView", modelViewMatrix);
+          virtualObjectShader.setMat4("u_ModelViewProjection", modelViewProjectionMatrix);
+          virtualObjectShader.setTexture("u_AlbedoTexture", virtualObjectAlbedoTexture);
+          virtualObjectShader.setTexture("u_RoughnessMetallicAmbientOcclusionTexture", virtualObjectPbrTexture);
+          virtualObjectShader.setTexture("u_Cubemap", cubemapFilter.getFilteredCubemapTexture());
+          virtualObjectShader.setTexture("u_DfgTexture", dfgTexture);
+
+          // Draw the line segment
+          render.draw(virtualObjectMesh, virtualObjectShader, virtualSceneFramebuffer);
+          Log.d(TAG, "Drew path segment " + i + " at position: " + position[0] + ", " + position[1] + ", " + position[2]);
+        }
+        Log.d(TAG, "Finished drawing all path segments");
+      } else {
+        Log.d(TAG, "No path points found");
+      }
+    } else {
+      Log.d(TAG, "No route path or tracking not active");
     }
 
     // Compose the virtual scene with the background.
