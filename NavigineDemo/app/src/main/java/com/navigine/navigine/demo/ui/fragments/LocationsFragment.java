@@ -47,7 +47,6 @@ public class LocationsFragment extends Fragment implements SwipeRefreshLayout.On
     private FrameLayout               mCircularProgress          = null;
     private CircularProgressIndicator mCircularProgressIndicator = null;
     private TextView                  mWarningTv                 = null;
-    private Button                    mStartArBtn                 = null;
     private DividerItemDecoration     mDivider                   = null;
 
     private SortedSet<LocationInfo> mInfoList = new TreeSet<>(new InfoComparator());
@@ -114,7 +113,6 @@ public class LocationsFragment extends Fragment implements SwipeRefreshLayout.On
         mCircularProgress          = view.findViewById(R.id.locations_fragment__progress_circular);
         mCircularProgressIndicator = view.findViewById(R.id.locations_fragment__progress_circular_indicator);
         mWarningTv                 = view.findViewById(R.id.locations_fragment__warning);
-        mStartArBtn                = view.findViewById(R.id.start_ar_button);
         mDivider                   = new DividerItemDecoration(requireActivity(), DividerItemDecoration.VERTICAL);
     }
 
@@ -141,9 +139,6 @@ public class LocationsFragment extends Fragment implements SwipeRefreshLayout.On
                 hideRefreshView();
                 hideWarningMessage();
             }
-        });
-        mStartArBtn.setOnClickListener(view -> {
-            startActivity(new Intent(requireContext(), HelloArActivity.class));
         });
     }
 

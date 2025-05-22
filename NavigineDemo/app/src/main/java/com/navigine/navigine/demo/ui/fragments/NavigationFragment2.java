@@ -85,6 +85,8 @@ import com.navigine.navigine.demo.adapters.route.RouteEventAdapter;
 import com.navigine.navigine.demo.adapters.sublocations.SublocationsAdapter;
 import com.navigine.navigine.demo.adapters.venues.VenueListAdapter;
 import com.navigine.navigine.demo.adapters.venues.VenuesIconsListAdapter;
+import com.navigine.navigine.demo.application.NavigineApp;
+import com.navigine.navigine.demo.helloar.HelloArActivity;
 import com.navigine.navigine.demo.models.VenueIconObj;
 import com.navigine.navigine.demo.ui.custom.lists.BottomSheetListView;
 import com.navigine.navigine.demo.ui.custom.lists.ListViewLimit;
@@ -145,6 +147,7 @@ public class NavigationFragment2 extends BaseFragment {
     private MaterialButton mChoseMapButton = null;
     private MaterialButton mStartRouteButton = null;
     private MaterialButton mRouteSheetCancelButton = null;
+    private MaterialButton mStartArBtn = null;
     private BottomSheetBehavior mMakeRouteBehavior = null;
     private BottomSheetBehavior mCancelRouteBehaviour = null;
     private BottomSheetListView mCancelRouteListView = null;
@@ -396,7 +399,7 @@ public class NavigationFragment2 extends BaseFragment {
         mSublocationsListView = view.findViewById(R.id.panel_sublocations__listview);
         mChipsScroll = view.findViewById(R.id.navigation__search_chips_scroll);
         mChipGroup = view.findViewById(R.id.navigation__search_chips_group);
-
+        mStartArBtn = view.findViewById(R.id.start_ar_button);
     }
 
     private void setViewsParams() {
@@ -617,6 +620,11 @@ public class NavigationFragment2 extends BaseFragment {
                     toggleAdjustMode();
                 }
             }
+        });
+
+        mStartArBtn.setOnClickListener(view -> {
+            NavigineApp.mRoutePath = mRoutePath;
+            startActivity(new Intent(requireContext(), HelloArActivity.class));
         });
     }
 
@@ -998,6 +1006,7 @@ public class NavigationFragment2 extends BaseFragment {
 
     public void onCancelRoute() {
 
+        mRoutePath = null;
         mSelectMapPoint = false;
         mTargetPoint = null;
         mTargetVenue = null;

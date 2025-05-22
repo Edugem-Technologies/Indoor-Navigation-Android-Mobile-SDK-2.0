@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:id="@+id/navigation__layout"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
@@ -17,6 +18,7 @@
             android:animateLayoutChanges="true"
             android:clickable="true"
             android:focusable="true"
+            tools:visibility="visible"
             android:visibility="gone">
 
             <com.navigine.view.LocationView
@@ -60,6 +62,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:elevation="@dimen/control_btn_elevation"
+                tools:visibility="gone"
                 android:gravity="top">
 
                 <!-- POI search view -->
@@ -162,6 +165,16 @@
                 android:visibility="gone" />
 
         </androidx.constraintlayout.widget.ConstraintLayout>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/start_ar_button"
+            style="@style/AppTheme.Button.Blue"
+            android:text="Launch AR"
+            android:textAllCaps="false"
+            android:layout_margin="10dp"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toStartOf="parent" />
+
 
         <!-- No location layout -->
         <include

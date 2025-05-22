@@ -10,18 +10,20 @@ import androidx.lifecycle.LifecycleObserver;
 import androidx.lifecycle.OnLifecycleEvent;
 import androidx.lifecycle.ProcessLifecycleOwner;
 
+import com.navigine.idl.java.RoutePath;
 import com.navigine.navigine.demo.utils.DimensionUtils;
 import com.navigine.sdk.Navigine;
 
 public class NavigineApp extends Application implements LifecycleObserver {
 
     public static Context AppContext = null;
+    public static RoutePath mRoutePath = null;
 
     @Override
     public void onCreate() {
         super.onCreate();
 
-        AppContext = getApplicationContext();
+        AppContext = this;
 
         DisplayMetrics displayMetrics = getResources().getDisplayMetrics();
         DimensionUtils.setDisplayMetrics(displayMetrics);
