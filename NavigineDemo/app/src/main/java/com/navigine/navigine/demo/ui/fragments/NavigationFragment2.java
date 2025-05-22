@@ -626,6 +626,7 @@ public class NavigationFragment2 extends BaseFragment {
             NavigineApp.mRoutePath = mRoutePath;
             startActivity(new Intent(requireContext(), HelloArActivity.class));
         });
+        mStartArBtn.setVisibility(GONE);
     }
 
     private void onHandleSearchQueryChange(String query) {
@@ -778,6 +779,7 @@ public class NavigationFragment2 extends BaseFragment {
             mRoutePath = arrayList.get(0);
 
             if (mRoutePath == null) return;
+            mStartArBtn.setVisibility(VISIBLE);
 
             List<LocationPoint> routePathPoints = mRoutePath.getPoints();
 
@@ -1006,6 +1008,7 @@ public class NavigationFragment2 extends BaseFragment {
 
     public void onCancelRoute() {
 
+        mStartArBtn.setVisibility(GONE);
         mRoutePath = null;
         mSelectMapPoint = false;
         mTargetPoint = null;

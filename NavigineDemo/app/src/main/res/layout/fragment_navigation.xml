@@ -166,16 +166,6 @@
 
         </androidx.constraintlayout.widget.ConstraintLayout>
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/start_ar_button"
-            style="@style/AppTheme.Button.Blue"
-            android:text="Launch AR"
-            android:textAllCaps="false"
-            android:layout_margin="10dp"
-            app:layout_constraintBottom_toBottomOf="parent"
-            app:layout_constraintEnd_toStartOf="parent" />
-
-
         <!-- No location layout -->
         <include
             android:id="@+id/navigation__no_location_layout"
