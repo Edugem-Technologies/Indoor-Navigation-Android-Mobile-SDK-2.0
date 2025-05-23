@@ -619,28 +619,30 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
 
     // Get true north heading from ARCore
     if (frame.getCamera().getTrackingState() == TrackingState.TRACKING) {
+      // Get the camera's pose in world coordinates
       Pose cameraPose = frame.getCamera().getPose();
       
-      // Get the camera's orientation relative to true north
-      float[] cameraRotation = new float[4];
-      cameraPose.getRotationQuaternion(cameraRotation, 0);
+      // Get the camera's orientation matrix
+      float[] cameraMatrix = new float[16];
+      cameraPose.toMatrix(cameraMatrix, 0);
       
-      // Convert quaternion to euler angles
-      float[] eulerAngles = new float[3];
-      float q0 = cameraRotation[0];
-      float q1 = cameraRotation[1];
-      float q2 = cameraRotation[2];
-      float q3 = cameraRotation[3];
+      // Extract the forward vector (Z-axis) from the camera matrix
+      float[] forward = new float[4];
+      forward[0] = cameraMatrix[8];  // Z-axis X component
+      forward[1] = cameraMatrix[9];  // Z-axis Y component
+      forward[2] = cameraMatrix[10]; // Z-axis Z component
+      forward[3] = 0;
       
-      // Calculate yaw (heading) in degrees
-      float yaw = (float) Math.toDegrees(Math.atan2(2.0f * (q0 * q3 + q1 * q2), 1.0f - 2.0f * (q2 * q2 + q3 * q3)));
-      if (yaw < 0) {
-        yaw += 360.0f;
+      // Calculate heading from forward vector
+      // Note: We negate the X component because ARCore's coordinate system has Z forward
+      float heading = (float) Math.toDegrees(Math.atan2(-forward[0], -forward[2]));
+      if (heading < 0) {
+        heading += 360.0f;
       }
       
       // Store true north heading if not set
       if (!hasTrueNorthHeading) {
-        trueNorthHeading = yaw;
+        trueNorthHeading = heading;
         hasTrueNorthHeading = true;
         Log.d(TAG, "True north heading: " + trueNorthHeading);
         
