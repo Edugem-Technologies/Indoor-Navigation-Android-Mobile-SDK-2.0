@@ -83,8 +83,6 @@ dependencies {
     implementation "androidx.work:work-runtime:$work_version"
     // ARCore (Google Play Services for AR) library.
     implementation 'com.google.ar:core:1.48.0'
-    // Google Play Services Location library for Geospatial mode
-    implementation 'com.google.android.gms:play-services-location:21.2.0'
     // Obj - a simple Wavefront OBJ file loader
     // https://github.com/javagl/Obj
     implementation 'de.javagl:obj:0.4.0'

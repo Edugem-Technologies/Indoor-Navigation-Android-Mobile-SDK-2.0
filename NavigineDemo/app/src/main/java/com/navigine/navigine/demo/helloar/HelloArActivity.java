@@ -16,8 +16,13 @@
 
 package com.navigine.navigine.demo.helloar;
 
+import android.content.Context;
 import android.content.DialogInterface;
 import android.content.res.Resources;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.media.Image;
 import android.opengl.GLES30;
 import android.opengl.GLSurfaceView;
@@ -225,7 +230,47 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
   private IndexBuffer indexBuffer;
   private Mesh cubeMesh;
   private Shader redCubeShader;
+  private SensorManager sensorManager;
+  private Sensor rotationVectorSensor;
 
+  private SensorEventListener sensorListener = new SensorEventListener() {
+    float[] rotationMatrix = new float[9];
+    float[] remappedRotationMatrix = new float[9];
+    float[] orientation = new float[3];
+
+    @Override
+    public void onSensorChanged(SensorEvent event) {
+
+      // Get raw rotation matrix from sensor vector
+      SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values);
+
+      // Remap the coordinate system to align with the device's natural orientation
+      // Adjust AXIS_X and AXIS_Z as needed (this combo usually works for portrait)
+      SensorManager.remapCoordinateSystem(
+              rotationMatrix,
+              SensorManager.AXIS_X,
+              SensorManager.AXIS_Z,
+              remappedRotationMatrix
+      );
+
+      // Get orientation values from corrected matrix
+      SensorManager.getOrientation(remappedRotationMatrix, orientation);
+
+      // Azimuth in radians → degrees
+      float azimuth = (float) Math.toDegrees(orientation[0]);
+      if (azimuth < 0) azimuth += 360;
+
+      trueNorthHeading = azimuth;
+      hasTrueNorthHeading = true;
+
+      Log.d(TAG, "Corrected true north heading: " + azimuth);
+      sensorManager.unregisterListener(sensorListener, rotationVectorSensor);
+    }
+
+
+    @Override
+    public void onAccuracyChanged(Sensor sensor, int accuracy) {}
+  };
 
   @Override
   protected void onCreate(Bundle savedInstanceState) {
@@ -256,6 +301,10 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
             popup.show();
           }
         });
+    sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
+    rotationVectorSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
+
+    sensorManager.registerListener(sensorListener, rotationVectorSensor, SensorManager.SENSOR_DELAY_UI);
   }
 
   /** Menu button to launch feature specific settings. */
@@ -298,6 +347,8 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
       redCubeShader.close();
       redCubeShader = null;
     }
+
+    sensorManager.unregisterListener(sensorListener, rotationVectorSensor);
 
     super.onDestroy();
   }
@@ -619,33 +670,9 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
 
     // Get true north heading from ARCore
     if (frame.getCamera().getTrackingState() == TrackingState.TRACKING) {
-      // Get the camera's pose in world coordinates
-      Pose cameraPose = frame.getCamera().getPose();
-      
-      // Get the camera's orientation matrix
-      float[] cameraMatrix = new float[16];
-      cameraPose.toMatrix(cameraMatrix, 0);
-      
-      // Extract the forward vector (Z-axis) from the camera matrix
-      float[] forward = new float[4];
-      forward[0] = cameraMatrix[8];  // Z-axis X component
-      forward[1] = cameraMatrix[9];  // Z-axis Y component
-      forward[2] = cameraMatrix[10]; // Z-axis Z component
-      forward[3] = 0;
-      
-      // Calculate heading from forward vector
-      // Note: We negate the X component because ARCore's coordinate system has Z forward
-      float heading = (float) Math.toDegrees(Math.atan2(-forward[0], -forward[2]));
-      if (heading < 0) {
-        heading += 360.0f;
-      }
-      
       // Store true north heading if not set
-      if (!hasTrueNorthHeading) {
-        trueNorthHeading = heading;
-        hasTrueNorthHeading = true;
-        Log.d(TAG, "True north heading: " + trueNorthHeading);
-        
+      if (hasTrueNorthHeading) {
+        hasTrueNorthHeading = false;
         // Compute path with true north heading
         if (NavigineApp.mRoutePath != null) {
           computeCubesForPath(NavigineApp.mRoutePath.getPoints());
@@ -944,15 +971,15 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     // Create rotation matrix to align with true north
     float[] pathRotationMatrix = new float[16];
     Matrix.setIdentityM(pathRotationMatrix, 0);
-    
+
     // First rotate to align with true north
-    Matrix.rotateM(pathRotationMatrix, 0, -trueNorthHeading, 0, 1, 0);
-    
+    Matrix.rotateM(pathRotationMatrix, 0, trueNorthHeading + 180.0f, 0, 1, 0);
+
     // Then rotate 90 degrees from true north
-    float[] tempMatrix = new float[16];
-    Matrix.setIdentityM(tempMatrix, 0);
-    Matrix.rotateM(tempMatrix, 0, 90.0f, 0, 1, 0);
-    Matrix.multiplyMM(pathRotationMatrix, 0, tempMatrix, 0, pathRotationMatrix, 0);
+//    float[] tempMatrix = new float[16];
+//    Matrix.setIdentityM(tempMatrix, 0);
+//    Matrix.rotateM(tempMatrix, 0, 90.0f, 0, 1, 0);
+//    Matrix.multiplyMM(pathRotationMatrix, 0, tempMatrix, 0, pathRotationMatrix, 0);
 
     for (int i = 0; i < pathPoints.size() - 1; i++) {
       LocationPoint p1 = pathPoints.get(i);
@@ -1164,8 +1191,6 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     } else {
       config.setInstantPlacementMode(InstantPlacementMode.DISABLED);
     }
-    // Enable Geospatial mode
-    config.setGeospatialMode(Config.GeospatialMode.ENABLED);
     session.configure(config);
   }
 }
