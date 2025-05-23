@@ -35,6 +35,9 @@ public class MainActivity extends AppCompatActivity {
         initViewModel();
         initNavigationView();
         startNavigationService();
+
+        if(NavigineSdkManager.LocationListManager == null)
+            NavigineSdkManager.initializeSdk();
     }
 
     @Override

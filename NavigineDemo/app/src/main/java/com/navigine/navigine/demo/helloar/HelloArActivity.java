@@ -107,6 +107,8 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
   private static final float PATH_HEIGHT = -1f; // Height of the path above ground
   private static final float[] PATH_COLOR = {1.0f, 0.0f, 0.0f, 1.0f}; // Red color for path
   private static final float COORDINATE_SCALE = 1.0f; // Scale factor to convert Navigine coordinates to AR world scale
+  private float trueNorthHeading = 0.0f; // Store true north heading in degrees
+  private boolean hasTrueNorthHeading = false;
 
   // See the definition of updateSphericalHarmonicsCoefficients for an explanation of these
   // constants.
@@ -191,6 +193,40 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
   private final float[] worldLightDirection = {0.0f, 0.0f, 0.0f, 0.0f};
   private final float[] viewLightDirection = new float[4]; // view x world light direction
 
+
+  private final float[] cubeVertices = {
+          // positions (x, y, z)
+          -0.5f, -0.5f, -0.5f,  // 0
+          0.5f, -0.5f, -0.5f,  // 1
+          0.5f,  0.5f, -0.5f,  // 2
+          -0.5f,  0.5f, -0.5f,  // 3
+          -0.5f, -0.5f,  0.5f,  // 4
+          0.5f, -0.5f,  0.5f,  // 5
+          0.5f,  0.5f,  0.5f,  // 6
+          -0.5f,  0.5f,  0.5f   // 7
+  };
+
+  private final short[] cubeIndices = {
+          // front
+          0, 1, 2, 0, 2, 3,
+          // right
+          1, 5, 6, 1, 6, 2,
+          // back
+          5, 4, 7, 5, 7, 6,
+          // left
+          4, 0, 3, 4, 3, 7,
+          // top
+          3, 2, 6, 3, 6, 7,
+          // bottom
+          4, 5, 1, 4, 1, 0
+  };
+
+  private VertexBuffer vertexBuffer;
+  private IndexBuffer indexBuffer;
+  private Mesh cubeMesh;
+  private Shader redCubeShader;
+
+
   @Override
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
@@ -243,6 +279,24 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
       // https://developers.google.com/ar/reference/java/arcore/reference/com/google/ar/core/Session#close()
       session.close();
       session = null;
+    }
+
+    // Clean up OpenGL resources
+    if (vertexBuffer != null) {
+      vertexBuffer.close();
+      vertexBuffer = null;
+    }
+    if (indexBuffer != null) {
+      indexBuffer.close();
+      indexBuffer = null;
+    }
+    if (cubeMesh != null) {
+      cubeMesh.close();
+      cubeMesh = null;
+    }
+    if (redCubeShader != null) {
+      redCubeShader.close();
+      redCubeShader = null;
     }
 
     super.onDestroy();
@@ -461,6 +515,69 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
       Log.e(TAG, "Failed to read a required asset file", e);
       messageSnackbarHelper.showError(this, "Failed to read a required asset file: " + e);
     }
+
+    // Initialize red cube shader
+    try {
+      redCubeShader = Shader.createFromAssets(
+              render,
+              "shaders/red_cube.vert",
+              "shaders/red_cube.frag",
+              null
+      );
+    } catch (Exception e) {
+      e.printStackTrace();
+    }
+
+    // Initialize cube mesh
+    FloatBuffer vertexBufferData = ByteBuffer.allocateDirect(cubeVertices.length * 4)
+            .order(ByteOrder.nativeOrder())
+            .asFloatBuffer();
+    vertexBufferData.put(cubeVertices);
+    vertexBufferData.rewind();
+
+    IntBuffer indexBufferData = ByteBuffer.allocateDirect(cubeIndices.length * 4)
+            .order(ByteOrder.nativeOrder())
+            .asIntBuffer();
+    for (short index : cubeIndices) {
+        indexBufferData.put(index);
+    }
+    indexBufferData.rewind();
+
+    try {
+        vertexBuffer = new VertexBuffer(
+                render,
+                /* numberOfEntriesPerVertex= */ 3,
+                vertexBufferData
+        );
+
+        indexBuffer = new IndexBuffer(
+                render,
+                indexBufferData
+        );
+
+        cubeMesh = new Mesh(
+                render,
+                Mesh.PrimitiveMode.TRIANGLES,
+                indexBuffer,
+                new VertexBuffer[] { vertexBuffer }
+        );
+    } catch (Throwable t) {
+        if (vertexBuffer != null) {
+            vertexBuffer.close();
+        }
+        if (indexBuffer != null) {
+            indexBuffer.close();
+        }
+        if (cubeMesh != null) {
+            cubeMesh.close();
+        }
+        throw t;
+    }
+
+//    if (NavigineApp.mRoutePath != null)
+//      computeCubesForPath(NavigineApp.mRoutePath.getPoints());
+
+    configureSession();
   }
 
   @Override
@@ -490,9 +607,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     // the video background can be properly adjusted.
     displayRotationHelper.updateSessionIfNeeded(session);
 
-    // Obtain the current frame from the AR Session. When the configuration is set to
-    // UpdateMode.BLOCKING (it is by default), this will throttle the rendering to the
-    // camera framerate.
+    // Get the current frame
     Frame frame;
     try {
       frame = session.update();
@@ -501,6 +616,44 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
       messageSnackbarHelper.showError(this, "Camera not available. Try restarting the app.");
       return;
     }
+
+    // Get true north heading from ARCore
+    if (frame.getCamera().getTrackingState() == TrackingState.TRACKING) {
+      Pose cameraPose = frame.getCamera().getPose();
+      
+      // Get the camera's orientation relative to true north
+      float[] cameraRotation = new float[4];
+      cameraPose.getRotationQuaternion(cameraRotation, 0);
+      
+      // Convert quaternion to euler angles
+      float[] eulerAngles = new float[3];
+      float q0 = cameraRotation[0];
+      float q1 = cameraRotation[1];
+      float q2 = cameraRotation[2];
+      float q3 = cameraRotation[3];
+      
+      // Calculate yaw (heading) in degrees
+      float yaw = (float) Math.toDegrees(Math.atan2(2.0f * (q0 * q3 + q1 * q2), 1.0f - 2.0f * (q2 * q2 + q3 * q3)));
+      if (yaw < 0) {
+        yaw += 360.0f;
+      }
+      
+      // Store true north heading if not set
+      if (!hasTrueNorthHeading) {
+        trueNorthHeading = yaw;
+        hasTrueNorthHeading = true;
+        Log.d(TAG, "True north heading: " + trueNorthHeading);
+        
+        // Compute path with true north heading
+        if (NavigineApp.mRoutePath != null) {
+          computeCubesForPath(NavigineApp.mRoutePath.getPoints());
+        }
+      }
+    }
+
+    // Obtain the current frame from the AR Session. When the configuration is set to
+    // UpdateMode.BLOCKING (it is by default), this will throttle the rendering to the
+    // camera framerate.
     Camera camera = frame.getCamera();
 
     // Update BackgroundRenderer state to match the depth settings.
@@ -636,82 +789,95 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
 
     // Draw navigation path if available
     if (NavigineApp.mRoutePath != null && camera.getTrackingState() == TrackingState.TRACKING) {
-      Log.d(TAG, "Starting to draw navigation path");
       List<LocationPoint> pathPoints = NavigineApp.mRoutePath.getPoints();
       if (pathPoints != null && !pathPoints.isEmpty()) {
-        Log.d(TAG, "Path points found: " + pathPoints.size());
-
         // Get camera pose
-        Pose cameraPose = camera.getPose();
-        float[] cameraPosition = new float[3];
-        cameraPose.getTranslation(cameraPosition, 0);
-        Log.d(TAG, "Camera position: " + cameraPosition[0] + ", " + cameraPosition[1] + ", " + cameraPosition[2]);
-
-        // Get the starting point (first point in the path)
-        LocationPoint startPoint = pathPoints.get(0);
-        float startX = startPoint.getPoint().getX() * COORDINATE_SCALE;
-        float startZ = startPoint.getPoint().getY() * COORDINATE_SCALE;
-        Log.d(TAG, "Path start point: " + startX + ", " + startZ);
-
-        // Create new anchors for path points
-        for (int i = 0; i < pathPoints.size() - 1; i++) {
-          LocationPoint currentPoint = pathPoints.get(i);
-          LocationPoint nextPoint = pathPoints.get(i + 1);
-          Log.d(TAG, "Drawing path segment " + i + " from " + currentPoint.getPoint().getX() + "," + currentPoint.getPoint().getY() + 
-                " to " + nextPoint.getPoint().getX() + "," + nextPoint.getPoint().getY());
-
-          // Convert Navigine coordinates to AR world coordinates relative to start point
-          float[] position = new float[]{
-              -(currentPoint.getPoint().getX() * COORDINATE_SCALE) + startX,  // Invert X coordinate
-              PATH_HEIGHT, // Place path slightly above ground
-              (currentPoint.getPoint().getY() * COORDINATE_SCALE) - startZ
-          };
-
-          // Calculate direction to next point
-          float dx = -(nextPoint.getPoint().getX() - currentPoint.getPoint().getX()) * COORDINATE_SCALE;  // Invert X direction
-          float dz = (nextPoint.getPoint().getY() - currentPoint.getPoint().getY()) * COORDINATE_SCALE;
-          float length = (float) Math.sqrt(dx * dx + dz * dz);
-          Log.d(TAG, "Line length: " + length);
-
-          // Create rotation matrix to align line with direction
-          float[] rotationMatrix = new float[16];
-          Matrix.setIdentityM(rotationMatrix, 0);
-          float angle = (float) Math.atan2(dz, dx);
-          Matrix.rotateM(rotationMatrix, 0, (float) Math.toDegrees(angle), 0, 1, 0);
-
-          // Combine rotation and translation
-          float[] modelMatrix = new float[16];
-          Matrix.setIdentityM(modelMatrix, 0);
-          Matrix.translateM(modelMatrix, 0, position[0], position[1], position[2]);
-          Matrix.multiplyMM(modelMatrix, 0, modelMatrix, 0, rotationMatrix, 0);
-          Matrix.scaleM(modelMatrix, 0, 2.0f, 2.0f, 2.0f);
-
-          // Calculate view and projection matrices
-          Matrix.multiplyMM(modelViewMatrix, 0, viewMatrix, 0, modelMatrix, 0);
-          Matrix.multiplyMM(modelViewProjectionMatrix, 0, projectionMatrix, 0, modelViewMatrix, 0);
-
-          // Set shader uniforms
-          virtualObjectShader.setMat4("u_ModelView", modelViewMatrix);
-          virtualObjectShader.setMat4("u_ModelViewProjection", modelViewProjectionMatrix);
-          virtualObjectShader.setTexture("u_AlbedoTexture", virtualObjectAlbedoTexture);
-          virtualObjectShader.setTexture("u_RoughnessMetallicAmbientOcclusionTexture", virtualObjectPbrTexture);
-          virtualObjectShader.setTexture("u_Cubemap", cubemapFilter.getFilteredCubemapTexture());
-          virtualObjectShader.setTexture("u_DfgTexture", dfgTexture);
-
-          // Draw the line segment
-          render.draw(virtualObjectMesh, virtualObjectShader, virtualSceneFramebuffer);
-          Log.d(TAG, "Drew path segment " + i + " at position: " + position[0] + ", " + position[1] + ", " + position[2]);
+//        Pose cameraPose = camera.getPose();
+//        float[] cameraPosition = new float[3];
+//        cameraPose.getTranslation(cameraPosition, 0);
+//
+//        // Get the starting point (first point in the path)
+//        LocationPoint startPoint = pathPoints.get(0);
+//        float startX = startPoint.getPoint().getX() * COORDINATE_SCALE;
+//        float startZ = startPoint.getPoint().getY() * COORDINATE_SCALE;
+//
+//        // Create new anchors for path points
+//        for (int i = 0; i < pathPoints.size() - 1; i++) {
+//          LocationPoint currentPoint = pathPoints.get(i);
+//          LocationPoint nextPoint = pathPoints.get(i + 1);
+//
+//          // Convert Navigine coordinates to AR world coordinates relative to start point
+//          float[] position = new float[]{
+//              -(currentPoint.getPoint().getX() * COORDINATE_SCALE) + startX,  // Invert X coordinate
+//              PATH_HEIGHT, // Place path slightly above ground
+//              (currentPoint.getPoint().getY() * COORDINATE_SCALE) - startZ
+//          };
+//
+//          // Calculate direction to next point
+//          float dx = -(nextPoint.getPoint().getX() - currentPoint.getPoint().getX()) * COORDINATE_SCALE;  // Invert X direction
+//          float dz = (nextPoint.getPoint().getY() - currentPoint.getPoint().getY()) * COORDINATE_SCALE;
+//
+//          // Create rotation matrix to align line with direction
+//          float[] rotationMatrix = new float[16];
+//          Matrix.setIdentityM(rotationMatrix, 0);
+//          float angle = (float) Math.atan2(dz, dx);
+//          Matrix.rotateM(rotationMatrix, 0, (float) Math.toDegrees(angle), 0, 1, 0);
+//
+//          // Combine rotation and translation
+//          float[] modelMatrix = new float[16];
+//          Matrix.setIdentityM(modelMatrix, 0);
+//          Matrix.translateM(modelMatrix, 0, position[0], position[1], position[2]);
+//          Matrix.multiplyMM(modelMatrix, 0, modelMatrix, 0, rotationMatrix, 0);
+//          Matrix.scaleM(modelMatrix, 0, 2.0f, 2.0f, 2.0f);
+//
+//          // Calculate view and projection matrices
+//          Matrix.multiplyMM(modelViewMatrix, 0, viewMatrix, 0, modelMatrix, 0);
+//          Matrix.multiplyMM(modelViewProjectionMatrix, 0, projectionMatrix, 0, modelViewMatrix, 0);
+//
+//          // Set shader uniforms
+//          virtualObjectShader.setMat4("u_ModelView", modelViewMatrix);
+//          virtualObjectShader.setMat4("u_ModelViewProjection", modelViewProjectionMatrix);
+//          virtualObjectShader.setTexture("u_AlbedoTexture", virtualObjectAlbedoTexture);
+//          virtualObjectShader.setTexture("u_RoughnessMetallicAmbientOcclusionTexture", virtualObjectPbrTexture);
+//          virtualObjectShader.setTexture("u_Cubemap", cubemapFilter.getFilteredCubemapTexture());
+//          virtualObjectShader.setTexture("u_DfgTexture", dfgTexture);
+//
+//          // Draw the line segment
+//          render.draw(virtualObjectMesh, virtualObjectShader, virtualSceneFramebuffer);
+//        }
+        for (float[] pos : cubePositions) {
+          drawRedCube(pos, viewMatrix, projectionMatrix, render, virtualSceneFramebuffer);
         }
-        Log.d(TAG, "Finished drawing all path segments");
-      } else {
-        Log.d(TAG, "No path points found");
       }
-    } else {
-      Log.d(TAG, "No route path or tracking not active");
     }
 
     // Compose the virtual scene with the background.
     backgroundRenderer.drawVirtualScene(render, virtualSceneFramebuffer, Z_NEAR, Z_FAR);
+  }
+
+  private void drawRedCube(float[] position, float[] viewMatrix, float[] projectionMatrix, SampleRender render, Framebuffer framebuffer) {
+    if (cubeMesh == null || redCubeShader == null) {
+      Log.e(TAG, "Skipping draw: Mesh or shader is null or released");
+      return;
+    }
+    float[] modelMatrix = new float[16];
+    float[] mvMatrix = new float[16];
+    float[] mvpMatrix = new float[16];
+
+    Pose pose = Pose.makeTranslation(position);
+    pose.toMatrix(modelMatrix, 0);
+
+    // Optional: scale to make cube smaller
+    float[] scaleMatrix = new float[16];
+    Matrix.setIdentityM(scaleMatrix, 0);
+    Matrix.scaleM(scaleMatrix, 0, 0.1f, 0.1f, 0.1f); // 10cm cube
+    Matrix.multiplyMM(modelMatrix, 0, modelMatrix, 0, scaleMatrix, 0);
+
+    Matrix.multiplyMM(mvMatrix, 0, viewMatrix, 0, modelMatrix, 0);
+    Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, mvMatrix, 0);
+
+    redCubeShader.setMat4("u_ModelViewProjection", mvpMatrix);
+    render.draw(cubeMesh, redCubeShader, framebuffer);
   }
 
   // Handle only one tap per frame, as taps are usually low frequency compared to frame rate.
@@ -757,6 +923,64 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
           // Instant Placement Point.
           break;
         }
+      }
+    }
+  }
+
+  List<float[]> cubePositions = new ArrayList<>();
+
+  // Call this only when mRoutePath is updated
+  void computeCubesForPath(List<LocationPoint> pathPoints) {
+    if(pathPoints.isEmpty()) return;
+    cubePositions.clear();
+    float spacing = 0.2f;
+
+    LocationPoint startPoint = pathPoints.get(0);
+    float startX = startPoint.getPoint().getX() * COORDINATE_SCALE;
+    float startZ = startPoint.getPoint().getY() * COORDINATE_SCALE;
+
+    // Create rotation matrix to align with true north
+    float[] pathRotationMatrix = new float[16];
+    Matrix.setIdentityM(pathRotationMatrix, 0);
+    
+    // First rotate to align with true north
+    Matrix.rotateM(pathRotationMatrix, 0, -trueNorthHeading, 0, 1, 0);
+    
+    // Then rotate 90 degrees from true north
+    float[] tempMatrix = new float[16];
+    Matrix.setIdentityM(tempMatrix, 0);
+    Matrix.rotateM(tempMatrix, 0, 90.0f, 0, 1, 0);
+    Matrix.multiplyMM(pathRotationMatrix, 0, tempMatrix, 0, pathRotationMatrix, 0);
+
+    for (int i = 0; i < pathPoints.size() - 1; i++) {
+      LocationPoint p1 = pathPoints.get(i);
+      LocationPoint p2 = pathPoints.get(i + 1);
+
+      // Convert to world coordinates
+      float x1 = -(p1.getPoint().getX() * COORDINATE_SCALE) + startX;
+      float z1 = (p1.getPoint().getY() * COORDINATE_SCALE) - startZ;
+      float x2 = -(p2.getPoint().getX() * COORDINATE_SCALE) + startX;
+      float z2 = (p2.getPoint().getY() * COORDINATE_SCALE) - startZ;
+
+      // Apply rotation to align with true north
+      float[] point1 = new float[]{x1, 0, z1, 1};
+      float[] point2 = new float[]{x2, 0, z2, 1};
+      Matrix.multiplyMV(point1, 0, pathRotationMatrix, 0, point1, 0);
+      Matrix.multiplyMV(point2, 0, pathRotationMatrix, 0, point2, 0);
+
+      float dx = point2[0] - point1[0];
+      float dz = point2[2] - point1[2];
+      float length = (float) Math.sqrt(dx * dx + dz * dz);
+      int steps = (int)(length / spacing);
+
+      for (int j = 0; j <= steps; j++) {
+        float t = (float) j / steps;
+        float x = point1[0] + t * dx;
+        float z = point1[2] + t * dz;
+        float y = PATH_HEIGHT;
+
+        float[] pos = new float[] { x, y, z };
+        cubePositions.add(pos);
       }
     }
   }
@@ -938,6 +1162,8 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     } else {
       config.setInstantPlacementMode(InstantPlacementMode.DISABLED);
     }
+    // Enable Geospatial mode
+    config.setGeospatialMode(Config.GeospatialMode.ENABLED);
     session.configure(config);
   }
 }

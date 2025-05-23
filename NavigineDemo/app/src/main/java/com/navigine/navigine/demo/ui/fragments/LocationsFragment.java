@@ -59,6 +59,8 @@ public class LocationsFragment extends Fragment implements SwipeRefreshLayout.On
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        if(NavigineSdkManager.LocationListManager == null)
+            NavigineSdkManager.initializeSdk();
         initListeners();
         addListeners();
     }
