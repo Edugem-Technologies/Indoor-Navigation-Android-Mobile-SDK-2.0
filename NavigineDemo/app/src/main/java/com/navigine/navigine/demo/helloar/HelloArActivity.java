@@ -676,6 +676,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
         hasTrueNorthHeading = false;
         // Compute path with true north heading
         if (NavigineApp.mRoutePath != null) {
+          makeRouteTurnPoints(NavigineApp.mRoutePath.getPoints());
           computeCubesForPath(NavigineApp.mRoutePath.getPoints());
         }
       }
@@ -821,60 +822,9 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     if (NavigineApp.mRoutePath != null && camera.getTrackingState() == TrackingState.TRACKING) {
       List<LocationPoint> pathPoints = NavigineApp.mRoutePath.getPoints();
       if (pathPoints != null && !pathPoints.isEmpty()) {
-        // Get camera pose
-//        Pose cameraPose = camera.getPose();
-//        float[] cameraPosition = new float[3];
-//        cameraPose.getTranslation(cameraPosition, 0);
-//
-//        // Get the starting point (first point in the path)
-//        LocationPoint startPoint = pathPoints.get(0);
-//        float startX = startPoint.getPoint().getX() * COORDINATE_SCALE;
-//        float startZ = startPoint.getPoint().getY() * COORDINATE_SCALE;
-//
-//        // Create new anchors for path points
-//        for (int i = 0; i < pathPoints.size() - 1; i++) {
-//          LocationPoint currentPoint = pathPoints.get(i);
-//          LocationPoint nextPoint = pathPoints.get(i + 1);
-//
-//          // Convert Navigine coordinates to AR world coordinates relative to start point
-//          float[] position = new float[]{
-//              -(currentPoint.getPoint().getX() * COORDINATE_SCALE) + startX,  // Invert X coordinate
-//              PATH_HEIGHT, // Place path slightly above ground
-//              (currentPoint.getPoint().getY() * COORDINATE_SCALE) - startZ
-//          };
-//
-//          // Calculate direction to next point
-//          float dx = -(nextPoint.getPoint().getX() - currentPoint.getPoint().getX()) * COORDINATE_SCALE;  // Invert X direction
-//          float dz = (nextPoint.getPoint().getY() - currentPoint.getPoint().getY()) * COORDINATE_SCALE;
-//
-//          // Create rotation matrix to align line with direction
-//          float[] rotationMatrix = new float[16];
-//          Matrix.setIdentityM(rotationMatrix, 0);
-//          float angle = (float) Math.atan2(dz, dx);
-//          Matrix.rotateM(rotationMatrix, 0, (float) Math.toDegrees(angle), 0, 1, 0);
-//
-//          // Combine rotation and translation
-//          float[] modelMatrix = new float[16];
-//          Matrix.setIdentityM(modelMatrix, 0);
-//          Matrix.translateM(modelMatrix, 0, position[0], position[1], position[2]);
-//          Matrix.multiplyMM(modelMatrix, 0, modelMatrix, 0, rotationMatrix, 0);
-//          Matrix.scaleM(modelMatrix, 0, 2.0f, 2.0f, 2.0f);
-//
-//          // Calculate view and projection matrices
-//          Matrix.multiplyMM(modelViewMatrix, 0, viewMatrix, 0, modelMatrix, 0);
-//          Matrix.multiplyMM(modelViewProjectionMatrix, 0, projectionMatrix, 0, modelViewMatrix, 0);
-//
-//          // Set shader uniforms
-//          virtualObjectShader.setMat4("u_ModelView", modelViewMatrix);
-//          virtualObjectShader.setMat4("u_ModelViewProjection", modelViewProjectionMatrix);
-//          virtualObjectShader.setTexture("u_AlbedoTexture", virtualObjectAlbedoTexture);
-//          virtualObjectShader.setTexture("u_RoughnessMetallicAmbientOcclusionTexture", virtualObjectPbrTexture);
-//          virtualObjectShader.setTexture("u_Cubemap", cubemapFilter.getFilteredCubemapTexture());
-//          virtualObjectShader.setTexture("u_DfgTexture", dfgTexture);
-//
-//          // Draw the line segment
-//          render.draw(virtualObjectMesh, virtualObjectShader, virtualSceneFramebuffer);
-//        }
+        for (float[] pos : routeTurnPoints) {
+          drawRouteTurnMarker(pos, viewMatrix, projectionMatrix, render, virtualSceneFramebuffer);
+        }
         for (float[] pos : cubePositions) {
           drawRedCube(pos, viewMatrix, projectionMatrix, render, virtualSceneFramebuffer);
         }
@@ -886,10 +836,6 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
   }
 
   private void drawRedCube(float[] position, float[] viewMatrix, float[] projectionMatrix, SampleRender render, Framebuffer framebuffer) {
-    if (cubeMesh == null || redCubeShader == null) {
-      Log.e(TAG, "Skipping draw: Mesh or shader is null or released");
-      return;
-    }
     float[] modelMatrix = new float[16];
     float[] mvMatrix = new float[16];
     float[] mvpMatrix = new float[16];
@@ -908,6 +854,33 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
 
     redCubeShader.setMat4("u_ModelViewProjection", mvpMatrix);
     render.draw(cubeMesh, redCubeShader, framebuffer);
+  }
+
+  private void drawRouteTurnMarker(float[] position, float[] viewMatrix, float[] projectionMatrix, SampleRender render, Framebuffer framebuffer) {
+    float[] modelMatrix = new float[16];
+    float[] mvMatrix = new float[16];
+    float[] mvpMatrix = new float[16];
+
+    Pose pose = Pose.makeTranslation(position);
+    pose.toMatrix(modelMatrix, 0);
+
+    float[] scaleMatrix = new float[16];
+    Matrix.setIdentityM(scaleMatrix, 0);
+    Matrix.scaleM(scaleMatrix, 0, 2f, 2f, 2f);
+    Matrix.multiplyMM(modelMatrix, 0, modelMatrix, 0, scaleMatrix, 0);
+
+    Matrix.multiplyMM(mvMatrix, 0, viewMatrix, 0, modelMatrix, 0);
+    Matrix.multiplyMM(mvpMatrix, 0, projectionMatrix, 0, mvMatrix, 0);
+
+    // Set shader uniforms
+    virtualObjectShader.setMat4("u_ModelView", mvMatrix);
+    virtualObjectShader.setMat4("u_ModelViewProjection", mvpMatrix);
+    virtualObjectShader.setTexture("u_AlbedoTexture", virtualObjectAlbedoTexture);
+    virtualObjectShader.setTexture("u_RoughnessMetallicAmbientOcclusionTexture", virtualObjectPbrTexture);
+    virtualObjectShader.setTexture("u_Cubemap", cubemapFilter.getFilteredCubemapTexture());
+    virtualObjectShader.setTexture("u_DfgTexture", dfgTexture);
+
+    render.draw(virtualObjectMesh, virtualObjectShader, framebuffer);
   }
 
   // Handle only one tap per frame, as taps are usually low frequency compared to frame rate.
@@ -958,6 +931,42 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
   }
 
   List<float[]> cubePositions = new ArrayList<>();
+  List<float[]> routeTurnPoints = new ArrayList<>();
+
+  void makeRouteTurnPoints(List<LocationPoint> pathPoints) {
+    if(pathPoints.isEmpty()) return;
+    routeTurnPoints.clear();
+
+    LocationPoint startPoint = pathPoints.get(0);
+    float startX = startPoint.getPoint().getX() * COORDINATE_SCALE;
+    float startZ = startPoint.getPoint().getY() * COORDINATE_SCALE;
+
+    // Create rotation matrix to align with true north
+    float[] pathRotationMatrix = new float[16];
+    Matrix.setIdentityM(pathRotationMatrix, 0);
+
+    // First rotate to align with true north
+    Matrix.rotateM(pathRotationMatrix, 0, trueNorthHeading, 0, 1, 0);
+
+    for (int i = 0; i < pathPoints.size() - 1; i++) {
+      LocationPoint p1 = pathPoints.get(i);
+
+      // Convert to world coordinates
+      float x1 = -(p1.getPoint().getX() * COORDINATE_SCALE) + startX;
+      float z1 = (p1.getPoint().getY() * COORDINATE_SCALE) - startZ;
+
+      // Apply rotation to align with true north
+      float[] point1 = new float[]{x1, 0, z1, 1};
+      Matrix.multiplyMV(point1, 0, pathRotationMatrix, 0, point1, 0);
+
+      float x = point1[0];
+      float z = point1[2];
+      float y = PATH_HEIGHT;
+
+      float[] pos = new float[] { x, y, z };
+      routeTurnPoints.add(pos);
+    }
+  }
 
   // Call this only when mRoutePath is updated
   void computeCubesForPath(List<LocationPoint> pathPoints) {
