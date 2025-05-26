@@ -258,6 +258,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
 
       // Azimuth in radians → degrees
       float azimuth = (float) Math.toDegrees(orientation[0]);
+      azimuth += 180; // Adjust to match Navigine coordinate system
       if (azimuth < 0) azimuth += 360;
 
       trueNorthHeading = azimuth;
@@ -973,7 +974,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     Matrix.setIdentityM(pathRotationMatrix, 0);
 
     // First rotate to align with true north
-    Matrix.rotateM(pathRotationMatrix, 0, trueNorthHeading + 180.0f, 0, 1, 0);
+    Matrix.rotateM(pathRotationMatrix, 0, trueNorthHeading, 0, 1, 0);
 
     // Then rotate 90 degrees from true north
 //    float[] tempMatrix = new float[16];
