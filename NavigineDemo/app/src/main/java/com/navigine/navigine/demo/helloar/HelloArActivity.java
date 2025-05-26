@@ -92,7 +92,6 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
-import java.nio.ShortBuffer;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -109,7 +108,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
   private static final String SEARCHING_PLANE_MESSAGE = "Searching for surfaces...";
   private static final String WAITING_FOR_TAP_MESSAGE = "Tap on a surface to place an object.";
 
-  private static final float PATH_HEIGHT = -1f; // Height of the path above ground
+  private static final float PATH_HEIGHT = -0.8f; // Height of the path above ground
   private static final float[] PATH_COLOR = {1.0f, 0.0f, 0.0f, 1.0f}; // Red color for path
   private static final float COORDINATE_SCALE = 1.0f; // Scale factor to convert Navigine coordinates to AR world scale
   private float trueNorthHeading = 0.0f; // Store true north heading in degrees
@@ -258,7 +257,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
 
       // Azimuth in radians → degrees
       float azimuth = (float) Math.toDegrees(orientation[0]);
-      azimuth += 180; // Adjust to match Navigine coordinate system
+      azimuth += 180 - 4; // Adjust to match Navigine coordinate system
       if (azimuth < 0) azimuth += 360;
 
       trueNorthHeading = azimuth;
@@ -822,8 +821,8 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     if (NavigineApp.mRoutePath != null && camera.getTrackingState() == TrackingState.TRACKING) {
       List<LocationPoint> pathPoints = NavigineApp.mRoutePath.getPoints();
       if (pathPoints != null && !pathPoints.isEmpty()) {
-        for (float[] pos : routeTurnPoints) {
-          drawRouteTurnMarker(pos, viewMatrix, projectionMatrix, render, virtualSceneFramebuffer);
+        for (WrappedAnchor wrappedAnchor : routeTurnPointsAnchors) {
+          drawRouteTurnMarker(wrappedAnchor, viewMatrix, projectionMatrix, render, virtualSceneFramebuffer);
         }
         for (float[] pos : cubePositions) {
           drawRedCube(pos, viewMatrix, projectionMatrix, render, virtualSceneFramebuffer);
@@ -856,13 +855,30 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     render.draw(cubeMesh, redCubeShader, framebuffer);
   }
 
-  private void drawRouteTurnMarker(float[] position, float[] viewMatrix, float[] projectionMatrix, SampleRender render, Framebuffer framebuffer) {
+  private void drawRouteTurnMarker(WrappedAnchor wrappedAnchor, float[] viewMatrix, float[] projectionMatrix, SampleRender render, Framebuffer framebuffer) {
     float[] modelMatrix = new float[16];
     float[] mvMatrix = new float[16];
     float[] mvpMatrix = new float[16];
 
-    Pose pose = Pose.makeTranslation(position);
-    pose.toMatrix(modelMatrix, 0);
+    Anchor anchor = wrappedAnchor.getAnchor();
+    anchor.getPose().toMatrix(modelMatrix, 0);
+
+    if (wrappedAnchor.getTrackable() == null) {
+      for (Plane plane : session.getAllTrackables(Plane.class)) {
+        if (plane.getTrackingState() == TrackingState.TRACKING && wrappedAnchor.getTrackable() != plane) {
+          Pose testPose = anchor.getPose();
+          if (plane.isPoseInPolygon(testPose)) {
+            try {
+              Anchor newAnchor = plane.createAnchor(testPose);
+              wrappedAnchor.setAnchor(newAnchor);
+              wrappedAnchor.setTrackable(plane);
+            } catch (Exception e) {
+            }
+            break;
+          }
+        }
+      }
+    }
 
     float[] scaleMatrix = new float[16];
     Matrix.setIdentityM(scaleMatrix, 0);
@@ -875,7 +891,10 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     // Set shader uniforms
     virtualObjectShader.setMat4("u_ModelView", mvMatrix);
     virtualObjectShader.setMat4("u_ModelViewProjection", mvpMatrix);
-    virtualObjectShader.setTexture("u_AlbedoTexture", virtualObjectAlbedoTexture);
+    if (wrappedAnchor.getTrackable() != null)
+      virtualObjectShader.setTexture("u_AlbedoTexture", virtualObjectAlbedoTexture);
+    else
+      virtualObjectShader.setTexture("u_AlbedoTexture", virtualObjectAlbedoInstantPlacementTexture);
     virtualObjectShader.setTexture("u_RoughnessMetallicAmbientOcclusionTexture", virtualObjectPbrTexture);
     virtualObjectShader.setTexture("u_Cubemap", cubemapFilter.getFilteredCubemapTexture());
     virtualObjectShader.setTexture("u_DfgTexture", dfgTexture);
@@ -931,11 +950,11 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
   }
 
   List<float[]> cubePositions = new ArrayList<>();
-  List<float[]> routeTurnPoints = new ArrayList<>();
+  List<WrappedAnchor> routeTurnPointsAnchors = new ArrayList<>();
 
   void makeRouteTurnPoints(List<LocationPoint> pathPoints) {
     if(pathPoints.isEmpty()) return;
-    routeTurnPoints.clear();
+    routeTurnPointsAnchors.clear();
 
     LocationPoint startPoint = pathPoints.get(0);
     float startX = startPoint.getPoint().getX() * COORDINATE_SCALE;
@@ -963,8 +982,12 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
       float z = point1[2];
       float y = PATH_HEIGHT;
 
-      float[] pos = new float[] { x, y, z };
-      routeTurnPoints.add(pos);
+      float[] position = new float[] { x, y, z };
+      float[] rotation = {0, 0, 0, 1};  // Identity quaternion (no rotation)
+      Pose pose = new Pose(position, rotation);
+      Anchor anchor = session.createAnchor(pose);
+
+      routeTurnPointsAnchors.add(new WrappedAnchor(anchor,null));
     }
   }
 
@@ -1220,6 +1243,14 @@ class WrappedAnchor {
 
   public Anchor getAnchor() {
     return anchor;
+  }
+
+  public void setAnchor(Anchor newAnchor) {
+    this.anchor = newAnchor;
+  }
+
+  public void setTrackable(Trackable newTrackable) {
+    this.trackable = newTrackable;
   }
 
   public Trackable getTrackable() {
