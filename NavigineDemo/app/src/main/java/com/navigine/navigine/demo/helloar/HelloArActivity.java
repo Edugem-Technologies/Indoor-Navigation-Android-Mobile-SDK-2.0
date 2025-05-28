@@ -76,6 +76,7 @@ import com.navigine.navigine.demo.common.samplerender.SampleRender;
 import com.navigine.navigine.demo.common.samplerender.Shader;
 import com.navigine.navigine.demo.common.samplerender.Texture;
 import com.navigine.navigine.demo.common.samplerender.VertexBuffer;
+import com.navigine.navigine.demo.common.samplerender.arcore.ArrowRenderer;
 import com.navigine.navigine.demo.common.samplerender.arcore.BackgroundRenderer;
 import com.navigine.navigine.demo.common.samplerender.arcore.PlaneRenderer;
 import com.navigine.navigine.demo.common.samplerender.arcore.SpecularCubemapFilter;
@@ -148,6 +149,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
 
   private PlaneRenderer planeRenderer;
   private BackgroundRenderer backgroundRenderer;
+  private ArrowRenderer arrowRenderer;
   private Framebuffer virtualSceneFramebuffer;
   private boolean hasSetTextureNames = false;
 
@@ -470,6 +472,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     try {
       planeRenderer = new PlaneRenderer(render);
       backgroundRenderer = new BackgroundRenderer(render);
+      arrowRenderer = new ArrowRenderer(render);
       virtualSceneFramebuffer = new Framebuffer(render, /* width= */ 1, /* height= */ 1);
 
       cubemapFilter =
@@ -829,6 +832,14 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
         }
       }
     }
+
+    float[] projMatrix = new float[16];
+    float[] viewMatrix = new float[16];
+
+    camera.getProjectionMatrix(projMatrix, 0, 0.1f, 100f);
+    camera.getViewMatrix(viewMatrix, 0);
+
+    arrowRenderer.draw(render, projMatrix, virtualSceneFramebuffer);
 
     // Compose the virtual scene with the background.
     backgroundRenderer.drawVirtualScene(render, virtualSceneFramebuffer, Z_NEAR, Z_FAR);
