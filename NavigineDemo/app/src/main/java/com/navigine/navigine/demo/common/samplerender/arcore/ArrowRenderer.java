@@ -37,15 +37,21 @@ public class ArrowRenderer {
                     "models/arrow_materials.mtl"
             );
 
-            shader.setVec3("u_Ambient", material.ambient);
-            shader.setVec3("u_Diffuse", material.diffuse);
-            shader.setVec3("u_Specular", material.specular);
-            shader.setFloat("u_Shininess", material.shininess);
+            // Set ambient lighting to 65% of the material color for balanced base illumination
+            float[] ambientColor = new float[]{
+                    material.diffuse[0] * 0.65f,
+                    material.diffuse[1] * 0.65f,
+                    material.diffuse[2] * 0.65f
+            };
+            shader.setVec3("u_Ambient", ambientColor);
 
-            // Static white light
-            shader.setVec3("u_LightColor", new float[]{1f, 1f, 1f});
-            // Light coming from camera direction
-            shader.setVec3("u_LightDirection", new float[]{1f, 1f, -3f});
+            // Set diffuse to 90% of the material color for stronger directional lighting
+            float[] diffuseColor = new float[]{
+                    material.diffuse[0] * 0.9f,
+                    material.diffuse[1] * 0.9f,
+                    material.diffuse[2] * 0.9f
+            };
+            shader.setVec3("u_Diffuse", diffuseColor);
 
         } catch (Exception e) {
             e.printStackTrace();

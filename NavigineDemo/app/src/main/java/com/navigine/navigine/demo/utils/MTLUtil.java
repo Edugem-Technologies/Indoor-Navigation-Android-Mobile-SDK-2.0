@@ -11,12 +11,15 @@ import java.io.InputStreamReader;
 
 public class MTLUtil {
 
+    static String TAG = "MTLUtil";
+
     public static MTLMaterial parse(AssetManager assetManager, String path) {
         MTLMaterial mat = new MTLMaterial();
         try (BufferedReader reader = new BufferedReader(
                 new InputStreamReader(assetManager.open(path)))) {
             String line;
             while ((line = reader.readLine()) != null) {
+                line = line.trim();
                 if (line.startsWith("Ka ")) mat.ambient = parseVec3(line);
                 else if (line.startsWith("Kd ")) mat.diffuse = parseVec3(line);
                 else if (line.startsWith("Ks ")) mat.specular = parseVec3(line);
